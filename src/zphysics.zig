@@ -1251,7 +1251,7 @@ const mem_alignment = 16;
 pub const GlobalState = struct {
     mem_allocator: std.mem.Allocator,
     mem_allocations: std.AutoHashMap(usize, SizeAndAlignment),
-    mem_mutex: std.Thread.Mutex = .{},
+    mem_mutex: std.Io.Mutex = .init,
 
     temp_allocator: *TempAllocator,
     job_system: *JobSystem,
@@ -3767,8 +3767,8 @@ pub const Constraint = opaque {
 //
 //--------------------------------------------------------------------------------------------------
 fn zphysicsAlloc(size: usize) callconv(.c) ?*anyopaque {
-    state.?.mem_mutex.lock();
-    defer state.?.mem_mutex.unlock();
+    std.Io.Threaded.mutexLock(&state.?.mem_mutex);
+    defer std.Io.Threaded.mutexUnlock(&state.?.mem_mutex);
 
     const ptr = state.?.mem_allocator.rawAlloc(
         size,
@@ -3786,8 +3786,8 @@ fn zphysicsAlloc(size: usize) callconv(.c) ?*anyopaque {
 }
 
 fn zphysicsRealloc(maybe_ptr: ?*anyopaque, reported_old_size: usize, new_size: usize) callconv(.c) ?*anyopaque {
-    state.?.mem_mutex.lock();
-    defer state.?.mem_mutex.unlock();
+    std.Io.Threaded.mutexLock(&state.?.mem_mutex);
+    defer std.Io.Threaded.mutexUnlock(&state.?.mem_mutex);
 
     const old_size = if (maybe_ptr != null) reported_old_size else 0;
 
@@ -3812,8 +3812,8 @@ fn zphysicsRealloc(maybe_ptr: ?*anyopaque, reported_old_size: usize, new_size: u
 }
 
 fn zphysicsAlignedAlloc(size: usize, alignment: usize) callconv(.c) ?*anyopaque {
-    state.?.mem_mutex.lock();
-    defer state.?.mem_mutex.unlock();
+    std.Io.Threaded.mutexLock(&state.?.mem_mutex);
+    defer std.Io.Threaded.mutexUnlock(&state.?.mem_mutex);
 
     const ptr = state.?.mem_allocator.rawAlloc(
         size,
@@ -3832,8 +3832,8 @@ fn zphysicsAlignedAlloc(size: usize, alignment: usize) callconv(.c) ?*anyopaque 
 
 fn zphysicsFree(maybe_ptr: ?*anyopaque) callconv(.c) void {
     if (maybe_ptr) |ptr| {
-        state.?.mem_mutex.lock();
-        defer state.?.mem_mutex.unlock();
+        std.Io.Threaded.mutexLock(&state.?.mem_mutex);
+        defer std.Io.Threaded.mutexUnlock(&state.?.mem_mutex);
 
         const info = state.?.mem_allocations.fetchRemove(@intFromPtr(ptr)).?.value;
 
@@ -3854,7 +3854,7 @@ fn zphysicsFree(maybe_ptr: ?*anyopaque) callconv(.c) void {
 const expect = std.testing.expect;
 
 test {
-    std.testing.refAllDeclsRecursive(@This());
+    std.testing.refAllDecls(@This());
 }
 
 extern fn JoltCTest_Basic1() u32;
