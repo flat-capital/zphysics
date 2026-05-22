@@ -19,7 +19,33 @@ pub const rvec_align = if (Real == f64) 32 else 16;
 
 pub const flt_epsilon = c.JPC_FLT_EPSILON;
 
-pub const Material = opaque {};
+pub const Material = opaque {
+    pub fn createSimple(name: [:0]const u8, rgba: [4]u8) !*Material {
+        return @ptrCast(c.JPC_PhysicsMaterialSimple_Create(
+            name.ptr,
+            rgba[0],
+            rgba[1],
+            rgba[2],
+            rgba[3],
+        ) orelse return error.FailedToCreatePhysicsMaterial);
+    }
+
+    pub fn addRef(material: *const Material) void {
+        c.JPC_PhysicsMaterial_AddRef(@ptrCast(material));
+    }
+
+    pub fn release(material: *const Material) void {
+        c.JPC_PhysicsMaterial_Release(@ptrCast(material));
+    }
+
+    pub fn getDebugName(material: *const Material) [*:0]const u8 {
+        return @ptrCast(c.JPC_PhysicsMaterial_GetDebugName(@ptrCast(material)));
+    }
+
+    pub fn getDebugColor(material: *const Material) u32 {
+        return c.JPC_PhysicsMaterial_GetDebugColor(@ptrCast(material));
+    }
+};
 pub const GroupFilter = opaque {};
 pub const BodyLockInterface = opaque {};
 pub const SharedMutex = opaque {};
@@ -2834,7 +2860,7 @@ pub const ConvexShapeSettings = opaque {
         return @ptrCast(c.JPC_ConvexShapeSettings_GetMaterial(@ptrCast(convex_shape_settings)));
     }
 
-    pub fn setMaterial(convex_shape_settings: *ConvexShapeSettings, material: ?*Material) void {
+    pub fn setMaterial(convex_shape_settings: *ConvexShapeSettings, material: ?*const Material) void {
         c.JPC_ConvexShapeSettings_SetMaterial(
             @ptrCast(convex_shape_settings),
             @ptrCast(material),
@@ -3168,6 +3194,43 @@ pub const HeightFieldShapeSettings = opaque {
         ) orelse return error.FailedToCreateHeightFieldShapeSettings);
     }
 
+    pub fn createWithMaterials(
+        samples: []const f32,
+        samples_per_axis: u32,
+        offset: [3]f32,
+        scale: [3]f32,
+        material_indices: []const u8,
+        materials: []const *const Material,
+    ) !*HeightFieldShapeSettings {
+        if (samples_per_axis < 2)
+            return error.FailedToCreateHeightFieldShapeSettings;
+
+        const axis: usize = @intCast(samples_per_axis);
+        const expected_samples = std.math.mul(usize, axis, axis) catch
+            return error.FailedToCreateHeightFieldShapeSettings;
+        if (samples.len != expected_samples)
+            return error.FailedToCreateHeightFieldShapeSettings;
+
+        const quads_per_axis = axis - 1;
+        const expected_material_indices = std.math.mul(usize, quads_per_axis, quads_per_axis) catch
+            return error.FailedToCreateHeightFieldShapeSettings;
+        if (material_indices.len != expected_material_indices)
+            return error.FailedToCreateHeightFieldShapeSettings;
+        if (material_indices.len > std.math.maxInt(u32) or materials.len > std.math.maxInt(u32))
+            return error.FailedToCreateHeightFieldShapeSettings;
+
+        return @ptrCast(c.JPC_HeightFieldShapeSettings_CreateWithMaterials(
+            samples.ptr,
+            samples_per_axis,
+            &offset,
+            &scale,
+            material_indices.ptr,
+            @intCast(material_indices.len),
+            @ptrCast(materials.ptr),
+            @intCast(materials.len),
+        ) orelse return error.FailedToCreateHeightFieldShapeSettings);
+    }
+
     pub fn getBlockSize(settings: *const HeightFieldShapeSettings) u32 {
         return c.JPC_HeightFieldShapeSettings_GetBlockSize(
             @ptrCast(settings),
@@ -3438,6 +3501,13 @@ pub const Shape = opaque {
             SubType,
             @enumFromInt(c.JPC_Shape_GetSubType(@ptrCast(shape))),
         );
+    }
+
+    pub fn getMaterial(shape: *const Shape, sub_shape_id: SubShapeId) ?*const Material {
+        return @ptrCast(c.JPC_Shape_GetMaterial(
+            @ptrCast(shape),
+            sub_shape_id.toJpc(),
+        ));
     }
 
     pub fn getUserData(shape: *const Shape) u64 {
@@ -4294,6 +4364,65 @@ test "zphysics.shape.heightfield" {
 
     shape.setUserData(1112);
     try expect(shape.getUserData() == 1112);
+}
+
+test "zphysics.shape.heightfield.materials" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const my_broad_phase_layer_interface = test_cb1.MyBroadphaseLayerInterface.init();
+    const my_broad_phase_should_collide = test_cb1.MyObjectVsBroadPhaseLayerFilter{};
+    const my_object_should_collide = test_cb1.MyObjectLayerPairFilter{};
+
+    const physics_system = try PhysicsSystem.create(
+        @as(*const BroadPhaseLayerInterface, @ptrCast(&my_broad_phase_layer_interface)),
+        @as(*const ObjectVsBroadPhaseLayerFilter, @ptrCast(&my_broad_phase_should_collide)),
+        @as(*const ObjectLayerPairFilter, @ptrCast(&my_object_should_collide)),
+        .{},
+    );
+    defer physics_system.destroy();
+
+    const grass = try Material.createSimple("grass", .{ 10, 20, 30, 40 });
+    defer grass.release();
+    const stone = try Material.createSimple("stone", .{ 50, 60, 70, 80 });
+    defer stone.release();
+
+    grass.addRef();
+    grass.release();
+
+    try expect(std.mem.eql(u8, std.mem.span(grass.getDebugName()), "grass"));
+    try expect(grass.getDebugColor() != stone.getDebugColor());
+
+    const samples = [_]f32{0} ** 9;
+    const material_indices = [_]u8{ 0, 1, 1, 0 };
+    const materials = [_]*const Material{ grass, stone };
+
+    const settings = try HeightFieldShapeSettings.createWithMaterials(
+        samples[0..],
+        3,
+        .{ 0, 0, 0 },
+        .{ 1, 1, 1 },
+        material_indices[0..],
+        materials[0..],
+    );
+    defer settings.asShapeSettings().release();
+
+    const shape = try settings.asShapeSettings().createShape();
+    defer shape.release();
+
+    const grass_hit = shape.castRay(.{
+        .origin = .{ 0.25, 10, 0.25, 1 },
+        .direction = .{ 0, -20, 0, 0 },
+    }, .{});
+    try expect(grass_hit.has_hit);
+    try expect(shape.getMaterial(grass_hit.hit.sub_shape_id) == grass);
+
+    const stone_hit = shape.castRay(.{
+        .origin = .{ 1.25, 10, 0.25, 1 },
+        .direction = .{ 0, -20, 0, 0 },
+    }, .{});
+    try expect(stone_hit.has_hit);
+    try expect(shape.getMaterial(stone_hit.hit.sub_shape_id) == stone);
 }
 
 test "zphysics.shape.meshshape" {

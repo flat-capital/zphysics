@@ -1483,6 +1483,25 @@ JPC_NarrowPhaseQuery_CastRay(const JPC_NarrowPhaseQuery *in_query,
                              const void *in_body_filter); // Can be NULL (no filter)
 //--------------------------------------------------------------------------------------------------
 //
+// JPC_PhysicsMaterial
+//
+//--------------------------------------------------------------------------------------------------
+JPC_API JPC_PhysicsMaterial *
+JPC_PhysicsMaterialSimple_Create(const char *in_name, uint8_t in_r, uint8_t in_g, uint8_t in_b, uint8_t in_a);
+
+JPC_API void
+JPC_PhysicsMaterial_AddRef(const JPC_PhysicsMaterial *in_material);
+
+JPC_API void
+JPC_PhysicsMaterial_Release(const JPC_PhysicsMaterial *in_material);
+
+JPC_API const char *
+JPC_PhysicsMaterial_GetDebugName(const JPC_PhysicsMaterial *in_material);
+
+JPC_API uint32_t
+JPC_PhysicsMaterial_GetDebugColor(const JPC_PhysicsMaterial *in_material);
+//--------------------------------------------------------------------------------------------------
+//
 // JPC_ShapeSettings
 //
 //--------------------------------------------------------------------------------------------------
@@ -1682,6 +1701,16 @@ JPC_ConvexHullShapeSettings_SetHullTolerance(JPC_ConvexHullShapeSettings *in_set
 JPC_API JPC_HeightFieldShapeSettings *
 JPC_HeightFieldShapeSettings_Create(const float *in_samples, uint32_t in_height_field_size);
 
+JPC_API JPC_HeightFieldShapeSettings *
+JPC_HeightFieldShapeSettings_CreateWithMaterials(const float *in_samples,
+                                                 uint32_t in_samples_per_axis,
+                                                 const float in_offset[3],
+                                                 const float in_scale[3],
+                                                 const uint8_t *in_material_indices,
+                                                 uint32_t in_material_index_count,
+                                                 const JPC_PhysicsMaterial *const *in_materials,
+                                                 uint32_t in_material_count);
+
 JPC_API void
 JPC_HeightFieldShapeSettings_GetOffset(const JPC_HeightFieldShapeSettings *in_settings, float out_offset[3]);
 
@@ -1801,6 +1830,9 @@ JPC_Shape_GetType(const JPC_Shape *in_shape);
 
 JPC_API JPC_ShapeSubType
 JPC_Shape_GetSubType(const JPC_Shape *in_shape);
+
+JPC_API const JPC_PhysicsMaterial *
+JPC_Shape_GetMaterial(const JPC_Shape *in_shape, JPC_SubShapeID in_sub_shape_id);
 
 JPC_API uint64_t
 JPC_Shape_GetUserData(const JPC_Shape *in_shape);

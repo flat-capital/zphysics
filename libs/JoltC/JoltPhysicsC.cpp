@@ -29,6 +29,7 @@
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 #include <Jolt/Physics/Collision/PhysicsMaterial.h>
+#include <Jolt/Physics/Collision/PhysicsMaterialSimple.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -1274,6 +1275,49 @@ JPC_NarrowPhaseQuery_CastRay(const JPC_NarrowPhaseQuery *in_query,
 }
 //--------------------------------------------------------------------------------------------------
 //
+// JPC_PhysicsMaterial
+//
+//--------------------------------------------------------------------------------------------------
+JPC_API JPC_PhysicsMaterial *
+JPC_PhysicsMaterialSimple_Create(const char *in_name, uint8_t in_r, uint8_t in_g, uint8_t in_b, uint8_t in_a)
+{
+    if (in_name == nullptr)
+        return nullptr;
+
+    auto material = new JPH::PhysicsMaterialSimple(in_name, JPH::Color(in_r, in_g, in_b, in_a));
+    material->AddRef();
+    return toJpc(material);
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API void
+JPC_PhysicsMaterial_AddRef(const JPC_PhysicsMaterial *in_material)
+{
+    assert(in_material);
+    toJph(in_material)->AddRef();
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API void
+JPC_PhysicsMaterial_Release(const JPC_PhysicsMaterial *in_material)
+{
+    assert(in_material);
+    toJph(in_material)->Release();
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API const char *
+JPC_PhysicsMaterial_GetDebugName(const JPC_PhysicsMaterial *in_material)
+{
+    assert(in_material);
+    return toJph(in_material)->GetDebugName();
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API uint32_t
+JPC_PhysicsMaterial_GetDebugColor(const JPC_PhysicsMaterial *in_material)
+{
+    assert(in_material);
+    return toJph(in_material)->GetDebugColor().GetUInt32();
+}
+//--------------------------------------------------------------------------------------------------
+//
 // JPC_ShapeSettings
 //
 //--------------------------------------------------------------------------------------------------
@@ -1667,6 +1711,54 @@ JPC_HeightFieldShapeSettings_Create(const float *in_samples, uint32_t in_height_
     return toJpc(settings);
 }
 //--------------------------------------------------------------------------------------------------
+JPC_API JPC_HeightFieldShapeSettings *
+JPC_HeightFieldShapeSettings_CreateWithMaterials(const float *in_samples,
+                                                 uint32_t in_samples_per_axis,
+                                                 const float in_offset[3],
+                                                 const float in_scale[3],
+                                                 const uint8_t *in_material_indices,
+                                                 uint32_t in_material_index_count,
+                                                 const JPC_PhysicsMaterial *const *in_materials,
+                                                 uint32_t in_material_count)
+{
+    if (in_samples == nullptr ||
+        in_offset == nullptr ||
+        in_scale == nullptr ||
+        in_material_indices == nullptr ||
+        in_materials == nullptr ||
+        in_samples_per_axis < 2 ||
+        in_material_count == 0 ||
+        in_material_count > 256)
+        return nullptr;
+
+    const uint64_t quad_count = uint64_t(in_samples_per_axis - 1) * uint64_t(in_samples_per_axis - 1);
+    if (quad_count > UINT32_MAX || in_material_index_count != quad_count)
+        return nullptr;
+
+    for (uint32_t i = 0; i < in_material_index_count; ++i)
+        if (in_material_indices[i] >= in_material_count)
+            return nullptr;
+
+    JPH::PhysicsMaterialList material_list;
+    material_list.reserve(in_material_count);
+    for (uint32_t i = 0; i < in_material_count; ++i)
+    {
+        if (in_materials[i] == nullptr)
+            return nullptr;
+        material_list.push_back(toJph(in_materials[i]));
+    }
+
+    auto settings = new JPH::HeightFieldShapeSettings(
+        in_samples,
+        loadVec3(in_offset),
+        loadVec3(in_scale),
+        in_samples_per_axis,
+        in_material_indices,
+        material_list);
+    settings->AddRef();
+    return toJpc(settings);
+}
+//--------------------------------------------------------------------------------------------------
 JPC_API void
 JPC_HeightFieldShapeSettings_GetOffset(const JPC_HeightFieldShapeSettings *in_settings, float out_offset[3])
 {
@@ -1913,6 +2005,12 @@ JPC_API JPC_ShapeSubType
 JPC_Shape_GetSubType(const JPC_Shape *in_shape)
 {
     return toJpc(toJph(in_shape)->GetSubType());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API const JPC_PhysicsMaterial *
+JPC_Shape_GetMaterial(const JPC_Shape *in_shape, JPC_SubShapeID in_sub_shape_id)
+{
+    return toJpc(toJph(in_shape)->GetMaterial(*toJph(&in_sub_shape_id)));
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API uint64_t
