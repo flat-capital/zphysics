@@ -2512,6 +2512,21 @@ JPC_CharacterVirtual_GetGroundVelocity(const JPC_CharacterVirtual *in_character,
 JPC_API JPC_CharacterGroundState
 JPC_CharacterVirtual_GetGroundState(JPC_CharacterVirtual *in_character);
 
+JPC_API const JPC_PhysicsMaterial *
+JPC_CharacterVirtual_GetGroundMaterial(const JPC_CharacterVirtual *in_character);
+
+JPC_API JPC_BodyID
+JPC_CharacterVirtual_GetGroundBodyID(const JPC_CharacterVirtual *in_character);
+
+JPC_API JPC_SubShapeID
+JPC_CharacterVirtual_GetGroundSubShapeID(const JPC_CharacterVirtual *in_character);
+
+JPC_API void
+JPC_CharacterVirtual_GetGroundNormal(const JPC_CharacterVirtual *in_character, float out_ground_normal[3]);
+
+JPC_API uint64_t
+JPC_CharacterVirtual_GetGroundUserData(const JPC_CharacterVirtual *in_character);
+
 JPC_API void
 JPC_CharacterVirtual_GetPosition(const JPC_CharacterVirtual *in_character, JPC_Real out_position[3]);
 

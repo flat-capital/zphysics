@@ -302,6 +302,7 @@ FN(toJpc)(const JPH::CollisionGroup *in) { assert(in); return reinterpret_cast<c
 FN(toJpc)(JPH::CollisionGroup *in) { assert(in); return reinterpret_cast<JPC_CollisionGroup *>(in); }
 
 FN(toJph)(const JPC_SubShapeID *in) { assert(in); return reinterpret_cast<const JPH::SubShapeID *>(in); }
+FN(toJpc)(JPH::SubShapeID in) { return (JPC_SubShapeID){ in.GetValue() }; }
 FN(toJph)(const JPC_BodyID *in) { assert(in); return reinterpret_cast<const JPH::BodyID *>(in); }
 FN(toJph)(JPC_BodyID *in) { assert(in); return reinterpret_cast<JPH::BodyID *>(in); }
 
@@ -3562,6 +3563,36 @@ JPC_API JPC_CharacterGroundState
 JPC_CharacterVirtual_GetGroundState(JPC_CharacterVirtual *in_character)
 {
     return toJpc(toJph(in_character)->GetGroundState());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API const JPC_PhysicsMaterial *
+JPC_CharacterVirtual_GetGroundMaterial(const JPC_CharacterVirtual *in_character)
+{
+    return toJpc(toJph(in_character)->GetGroundMaterial());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API JPC_BodyID
+JPC_CharacterVirtual_GetGroundBodyID(const JPC_CharacterVirtual *in_character)
+{
+    return toJpc(toJph(in_character)->GetGroundBodyID());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API JPC_SubShapeID
+JPC_CharacterVirtual_GetGroundSubShapeID(const JPC_CharacterVirtual *in_character)
+{
+    return toJpc(toJph(in_character)->GetGroundSubShapeID());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API void
+JPC_CharacterVirtual_GetGroundNormal(const JPC_CharacterVirtual *in_character, float out_ground_normal[3])
+{
+    storeVec3(out_ground_normal, toJph(in_character)->GetGroundNormal());
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API uint64_t
+JPC_CharacterVirtual_GetGroundUserData(const JPC_CharacterVirtual *in_character)
+{
+    return toJph(in_character)->GetGroundUserData();
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API void

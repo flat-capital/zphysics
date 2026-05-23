@@ -65,6 +65,10 @@ pub const BodyId = enum(BodyIdInt) {
         return @intFromEnum(self) & @intFromEnum(BodyId.index_bits);
     }
 
+    pub inline fn isInvalid(self: BodyId) bool {
+        return self == .invalid;
+    }
+
     pub inline fn toJpc(self: BodyId) c.JPC_BodyID {
         return .{ .id = @intFromEnum(self) };
     }
@@ -75,10 +79,21 @@ pub const SubShapeId = enum(SubShapeIdInt) {
     empty = c.JPC_SUB_SHAPE_ID_EMPTY,
     _,
 
+    pub inline fn isEmpty(self: SubShapeId) bool {
+        return self == .empty;
+    }
+
     pub inline fn toJpc(self: SubShapeId) c.JPC_SubShapeID {
         return .{ .id = @intFromEnum(self) };
     }
 };
+
+comptime {
+    assert(@typeInfo(BodyId).@"enum".tag_type == BodyIdInt);
+    assert(@typeInfo(SubShapeId).@"enum".tag_type == SubShapeIdInt);
+    assert(std.meta.fieldInfo(@typeInfo(@TypeOf(c.JPC_CharacterVirtual_GetGroundBodyID)).@"fn".return_type.?, .id).type == BodyIdInt);
+    assert(std.meta.fieldInfo(@typeInfo(@TypeOf(c.JPC_CharacterVirtual_GetGroundSubShapeID)).@"fn".return_type.?, .id).type == SubShapeIdInt);
+}
 
 pub const max_physics_jobs = c.JPC_MAX_PHYSICS_JOBS;
 pub const max_physics_barriers = c.JPC_MAX_PHYSICS_BARRIERS;
@@ -2313,6 +2328,10 @@ pub const Body = extern struct {
         return @as(*const Shape, @ptrCast(c.JPC_Body_GetShape(@as(*const c.JPC_Body, @ptrCast(body)))));
     }
 
+    pub fn getMaterial(body: *const Body, sub_shape_id: SubShapeId) ?*const Material {
+        return body.getShape().getMaterial(sub_shape_id);
+    }
+
     pub fn getPosition(body: *const Body) [3]Real {
         var position: [3]Real = undefined;
         c.JPC_Body_GetPosition(@as(*const c.JPC_Body, @ptrCast(body)), &position);
@@ -2572,6 +2591,32 @@ pub const CharacterVirtual = opaque {
     }
     pub fn getGroundState(character: *CharacterVirtual) CharacterGroundState {
         return @enumFromInt(c.JPC_CharacterVirtual_GetGroundState(@as(*c.JPC_CharacterVirtual, @ptrCast(character))));
+    }
+
+    pub fn getGroundMaterial(character: *const CharacterVirtual) ?*const Material {
+        return @ptrCast(c.JPC_CharacterVirtual_GetGroundMaterial(@as(*const c.JPC_CharacterVirtual, @ptrCast(character))));
+    }
+
+    pub fn getGroundBodyId(character: *const CharacterVirtual) BodyId {
+        return @enumFromInt(c.JPC_CharacterVirtual_GetGroundBodyID(
+            @as(*const c.JPC_CharacterVirtual, @ptrCast(character)),
+        ).id);
+    }
+
+    pub fn getGroundSubShapeId(character: *const CharacterVirtual) SubShapeId {
+        return @enumFromInt(c.JPC_CharacterVirtual_GetGroundSubShapeID(
+            @as(*const c.JPC_CharacterVirtual, @ptrCast(character)),
+        ).id);
+    }
+
+    pub fn getGroundNormal(character: *const CharacterVirtual) [3]f32 {
+        var normal: [3]f32 = undefined;
+        c.JPC_CharacterVirtual_GetGroundNormal(@as(*const c.JPC_CharacterVirtual, @ptrCast(character)), &normal);
+        return normal;
+    }
+
+    pub fn getGroundUserData(character: *const CharacterVirtual) u64 {
+        return c.JPC_CharacterVirtual_GetGroundUserData(@as(*const c.JPC_CharacterVirtual, @ptrCast(character)));
     }
 
     pub fn getPosition(character: *const CharacterVirtual) [3]Real {
@@ -4643,6 +4688,231 @@ test "zphysics.body.basic" {
 
     try expect(physics_system.getNumBodies() == 1);
     try expect(physics_system.getNumActiveBodies() == 0);
+}
+
+test "zphysics.character_virtual.ground_accessors" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const my_broad_phase_layer_interface = test_cb1.MyBroadphaseLayerInterface.init();
+    const my_broad_phase_should_collide = test_cb1.MyObjectVsBroadPhaseLayerFilter{};
+    const my_object_should_collide = test_cb1.MyObjectLayerPairFilter{};
+
+    const physics_system = try PhysicsSystem.create(
+        @as(*const BroadPhaseLayerInterface, @ptrCast(&my_broad_phase_layer_interface)),
+        @as(*const ObjectVsBroadPhaseLayerFilter, @ptrCast(&my_broad_phase_should_collide)),
+        @as(*const ObjectLayerPairFilter, @ptrCast(&my_object_should_collide)),
+        .{},
+    );
+    defer physics_system.destroy();
+
+    const body_interface = physics_system.getBodyInterfaceMut();
+
+    const ground_material = try Material.createSimple("ground_material", .{ 32, 200, 96, 255 });
+    defer ground_material.release();
+
+    const floor_shape_settings = try BoxShapeSettings.create(.{ 10.0, 0.5, 10.0 });
+    defer floor_shape_settings.asShapeSettings().release();
+    floor_shape_settings.asConvexShapeSettings().setMaterial(ground_material);
+
+    const floor_shape = try floor_shape_settings.asShapeSettings().createShape();
+    defer floor_shape.release();
+
+    const floor_user_data: u64 = 0xCAFE_BABE_D00D_FEED;
+    const floor_settings = BodyCreationSettings{
+        .position = .{ 0.0, -0.5, 0.0, 1.0 },
+        .rotation = .{ 0.0, 0.0, 0.0, 1.0 },
+        .shape = floor_shape,
+        .motion_type = .static,
+        .object_layer = test_cb1.object_layers.non_moving,
+        .user_data = floor_user_data,
+    };
+    const floor_id = try body_interface.createAndAddBody(floor_settings, .activate);
+    defer body_interface.removeAndDestroyBody(floor_id);
+
+    const capsule_shape_settings = try CapsuleShapeSettings.create(0.5, 0.5);
+    defer capsule_shape_settings.asShapeSettings().release();
+
+    const capsule_shape = try capsule_shape_settings.asShapeSettings().createShape();
+    defer capsule_shape.release();
+
+    const character_settings = try CharacterVirtualSettings.create();
+    defer character_settings.release();
+    character_settings.base.shape = capsule_shape;
+
+    const character = try CharacterVirtual.create(
+        character_settings,
+        .{ 0.0, 4.0, 0.0 },
+        .{ 0.0, 0.0, 0.0, 1.0 },
+        physics_system,
+    );
+    defer character.destroy();
+
+    physics_system.optimizeBroadPhase();
+
+    const update_settings = CharacterVirtual.ExtendedUpdateSettings{};
+    for (0..120) |_| {
+        character.setLinearVelocity(.{ 0.0, -6.0, 0.0 });
+        character.extendedUpdate(1.0 / 60.0, .{ 0.0, -9.8, 0.0 }, &update_settings, .{});
+        if (character.getGroundState() == .on_ground) break;
+    }
+
+    try expect(character.getGroundState() == .on_ground);
+    try expect(character.getGroundMaterial() == ground_material);
+    try expect(character.getGroundBodyId() == floor_id);
+    try expect(character.getGroundBodyId().isInvalid() == false);
+    try expect(floor_shape.getMaterial(character.getGroundSubShapeId()) == ground_material);
+    try expect(character.getGroundUserData() == floor_user_data);
+
+    const normal = character.getGroundNormal();
+    try expect(normal[1] > 0.9);
+
+    character.setPosition(.{ 0.0, 8.0, 0.0 });
+    character.setLinearVelocity(.{ 0.0, 0.0, 0.0 });
+    character.extendedUpdate(1.0 / 60.0, .{ 0.0, -9.8, 0.0 }, &update_settings, .{});
+
+    try expect(character.getGroundState() == .in_air);
+    try expect(character.getGroundBodyId().isInvalid());
+}
+
+test "zphysics.body.contact_material_accessors" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const ContactMaterialRecorder = extern struct {
+        listener: ContactListener = .init(@This()),
+        floor_id: BodyId = .invalid,
+        box_id: BodyId = .invalid,
+        floor_material: ?*const Material = null,
+        box_material: ?*const Material = null,
+        floor_sub_shape_id: SubShapeId = .empty,
+        box_sub_shape_id: SubShapeId = .empty,
+        saw_contact: bool = false,
+
+        fn recordBody(self: *@This(), body: *const Body, sub_shape_id: SubShapeId) void {
+            if (body.getId() == self.floor_id) {
+                self.floor_material = body.getMaterial(sub_shape_id);
+                self.floor_sub_shape_id = sub_shape_id;
+                self.saw_contact = true;
+            } else if (body.getId() == self.box_id) {
+                self.box_material = body.getMaterial(sub_shape_id);
+                self.box_sub_shape_id = sub_shape_id;
+                self.saw_contact = true;
+            }
+        }
+
+        pub fn onContactValidate(
+            _: *ContactListener,
+            _: *const Body,
+            _: *const Body,
+            _: *const [3]Real,
+            _: *const CollideShapeResult,
+        ) callconv(.c) ValidateResult {
+            return .accept_all_contacts;
+        }
+
+        pub fn onContactAdded(
+            listener: *ContactListener,
+            body1: *const Body,
+            body2: *const Body,
+            manifold: *const ContactManifold,
+            _: *ContactSettings,
+        ) callconv(.c) void {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.recordBody(body1, manifold.shape1_sub_shape_id);
+            self.recordBody(body2, manifold.shape2_sub_shape_id);
+        }
+
+        pub fn onContactPersisted(
+            listener: *ContactListener,
+            body1: *const Body,
+            body2: *const Body,
+            manifold: *const ContactManifold,
+            _: *ContactSettings,
+        ) callconv(.c) void {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.recordBody(body1, manifold.shape1_sub_shape_id);
+            self.recordBody(body2, manifold.shape2_sub_shape_id);
+        }
+
+        pub fn onContactRemoved(_: *ContactListener, _: *const SubShapeIdPair) callconv(.c) void {}
+    };
+
+    const my_broad_phase_layer_interface = test_cb1.MyBroadphaseLayerInterface.init();
+    const my_broad_phase_should_collide = test_cb1.MyObjectVsBroadPhaseLayerFilter{};
+    const my_object_should_collide = test_cb1.MyObjectLayerPairFilter{};
+
+    const physics_system = try PhysicsSystem.create(
+        @as(*const BroadPhaseLayerInterface, @ptrCast(&my_broad_phase_layer_interface)),
+        @as(*const ObjectVsBroadPhaseLayerFilter, @ptrCast(&my_broad_phase_should_collide)),
+        @as(*const ObjectLayerPairFilter, @ptrCast(&my_object_should_collide)),
+        .{},
+    );
+    defer physics_system.destroy();
+
+    const body_interface = physics_system.getBodyInterfaceMut();
+
+    const floor_material = try Material.createSimple("floor_material", .{ 80, 120, 220, 255 });
+    defer floor_material.release();
+
+    const box_material = try Material.createSimple("box_material", .{ 220, 160, 64, 255 });
+    defer box_material.release();
+
+    const floor_shape_settings = try BoxShapeSettings.create(.{ 10.0, 0.5, 10.0 });
+    defer floor_shape_settings.asShapeSettings().release();
+    floor_shape_settings.asConvexShapeSettings().setMaterial(floor_material);
+
+    const floor_shape = try floor_shape_settings.asShapeSettings().createShape();
+    defer floor_shape.release();
+
+    const floor_settings = BodyCreationSettings{
+        .position = .{ 0.0, -0.5, 0.0, 1.0 },
+        .rotation = .{ 0.0, 0.0, 0.0, 1.0 },
+        .shape = floor_shape,
+        .motion_type = .static,
+        .object_layer = test_cb1.object_layers.non_moving,
+    };
+    const floor_id = try body_interface.createAndAddBody(floor_settings, .activate);
+    defer body_interface.removeAndDestroyBody(floor_id);
+
+    const box_shape_settings = try BoxShapeSettings.create(.{ 0.5, 0.5, 0.5 });
+    defer box_shape_settings.asShapeSettings().release();
+    box_shape_settings.asConvexShapeSettings().setMaterial(box_material);
+
+    const box_shape = try box_shape_settings.asShapeSettings().createShape();
+    defer box_shape.release();
+
+    const box_settings = BodyCreationSettings{
+        .position = .{ 0.0, 3.0, 0.0, 1.0 },
+        .rotation = .{ 0.0, 0.0, 0.0, 1.0 },
+        .shape = box_shape,
+        .motion_type = .dynamic,
+        .object_layer = test_cb1.object_layers.moving,
+    };
+    const box_id = try body_interface.createAndAddBody(box_settings, .activate);
+    defer body_interface.removeAndDestroyBody(box_id);
+
+    var recorder = ContactMaterialRecorder{
+        .floor_id = floor_id,
+        .box_id = box_id,
+    };
+    physics_system.setContactListener(@ptrCast(&recorder.listener));
+    defer physics_system.setContactListener(null);
+
+    physics_system.optimizeBroadPhase();
+
+    for (0..240) |_| {
+        try physics_system.update(1.0 / 60.0, .{});
+        if (recorder.floor_material != null and recorder.box_material != null) break;
+    }
+
+    try expect(recorder.saw_contact);
+    try expect(recorder.floor_material == floor_material);
+    try expect(recorder.box_material == box_material);
+    try expect(floor_id.isInvalid() == false);
+    try expect(box_id.isInvalid() == false);
+    try expect(recorder.floor_sub_shape_id.isEmpty() == true);
+    try expect(recorder.box_sub_shape_id.isEmpty() == true);
 }
 
 test "zphysics.body.motion" {
