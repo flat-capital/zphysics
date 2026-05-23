@@ -3469,6 +3469,31 @@ pub const CompoundShapeSettings = opaque {
 //
 //--------------------------------------------------------------------------------------------------
 pub const Shape = opaque {
+    pub const Triangle = extern struct {
+        vertices: [3][3]f32,
+        material: ?*const Material,
+
+        comptime {
+            assert(@sizeOf(Triangle) == @sizeOf(c.JPC_Shape_Triangle));
+            assert(@offsetOf(Triangle, "vertices") == @offsetOf(c.JPC_Shape_Triangle, "vertices"));
+            assert(@offsetOf(Triangle, "material") == @offsetOf(c.JPC_Shape_Triangle, "material"));
+        }
+    };
+
+    pub const TriangleQuery = struct {
+        box: AABox,
+        position_com: [3]f32 = .{ 0.0, 0.0, 0.0 },
+        rotation: [4]f32 = .{ 0.0, 0.0, 0.0, 1.0 },
+        scale: [3]f32 = .{ 1.0, 1.0, 1.0 },
+        base_offset: [3]Real = .{ 0.0, 0.0, 0.0 },
+    };
+
+    pub const TriangleCallback = *const fn (
+        context: ?*anyopaque,
+        triangles: [*]const Triangle,
+        triangle_count: u32,
+    ) callconv(.c) bool;
+
     pub const Type = enum(c.JPC_ShapeType) {
         convex = c.JPC_SHAPE_TYPE_CONVEX,
         compound = c.JPC_SHAPE_TYPE_COMPOUND,
@@ -3592,6 +3617,24 @@ pub const Shape = opaque {
     pub fn getLocalBounds(shape: *const Shape) AABox {
         const aabox = c.JPC_Shape_GetLocalBounds(@ptrCast(shape));
         return @as(*AABox, @ptrCast(@constCast(&aabox))).*;
+    }
+
+    pub fn collectTriangles(
+        shape: *const Shape,
+        query: TriangleQuery,
+        context: ?*anyopaque,
+        callback: TriangleCallback,
+    ) bool {
+        return c.JPC_Shape_CollectTriangles(
+            @ptrCast(shape),
+            @ptrCast(&query.box),
+            &query.position_com,
+            &query.rotation,
+            &query.scale,
+            &query.base_offset,
+            context,
+            @ptrCast(callback),
+        );
     }
 
     pub fn getSurfaceNormal(shape: *const Shape, sub_shape_id: SubShapeId, local_pos: [3]f32) [3]f32 {
@@ -4183,6 +4226,70 @@ test "zphysics.basic" {
     try expect(box_shape.getUserData() == 456);
 }
 
+test "zphysics.shape.collect_triangles.box" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const material = try Material.createSimple("debug", .{ 1, 2, 3, 4 });
+    defer material.release();
+
+    const settings = try BoxShapeSettings.create(.{ 1.0, 2.0, 3.0 });
+    defer settings.asShapeSettings().release();
+    settings.asConvexShapeSettings().setMaterial(material);
+
+    const shape = try settings.asShapeSettings().createShape();
+    defer shape.release();
+
+    const CollectContext = struct {
+        material: *const Material,
+        triangle_count: u32 = 0,
+        material_count: u32 = 0,
+
+        fn collect(
+            context: ?*anyopaque,
+            triangles: [*]const Shape.Triangle,
+            triangle_count: u32,
+        ) callconv(.c) bool {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            const triangle_slice = triangles[0..@intCast(triangle_count)];
+            self.triangle_count += triangle_count;
+            for (triangle_slice) |triangle| {
+                if (triangle.material == self.material)
+                    self.material_count += 1;
+            }
+            return true;
+        }
+
+        fn stop(
+            context: ?*anyopaque,
+            triangles: [*]const Shape.Triangle,
+            triangle_count: u32,
+        ) callconv(.c) bool {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            _ = triangles;
+            self.triangle_count += triangle_count;
+            return false;
+        }
+    };
+
+    var context = CollectContext{ .material = material };
+    try expect(shape.collectTriangles(
+        .{ .box = shape.getLocalBounds() },
+        @ptrCast(&context),
+        CollectContext.collect,
+    ));
+    try std.testing.expectEqual(@as(u32, 12), context.triangle_count);
+    try std.testing.expectEqual(@as(u32, 12), context.material_count);
+
+    context.triangle_count = 0;
+    try expect(!shape.collectTriangles(
+        .{ .box = shape.getLocalBounds() },
+        @ptrCast(&context),
+        CollectContext.stop,
+    ));
+    try expect(context.triangle_count > 0);
+}
+
 test "zphysics.shape.sphere" {
     try init(std.testing.allocator, .{});
     defer deinit();
@@ -4484,6 +4591,69 @@ test "zphysics.shape.heightfield.materials" {
     }, .{});
     try expect(stone_hit.has_hit);
     try expect(shape.getMaterial(stone_hit.hit.sub_shape_id) == stone);
+}
+
+test "zphysics.shape.collect_triangles.heightfield_materials" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const grass = try Material.createSimple("grass", .{ 10, 20, 30, 40 });
+    defer grass.release();
+    const stone = try Material.createSimple("stone", .{ 50, 60, 70, 80 });
+    defer stone.release();
+
+    const samples = [_]f32{0} ** 9;
+    const material_indices = [_]u8{ 0, 1, 1, 0 };
+    const materials = [_]*const Material{ grass, stone };
+
+    const settings = try HeightFieldShapeSettings.createWithMaterials(
+        samples[0..],
+        3,
+        .{ 0, 0, 0 },
+        .{ 1, 1, 1 },
+        material_indices[0..],
+        materials[0..],
+    );
+    defer settings.asShapeSettings().release();
+
+    const shape = try settings.asShapeSettings().createShape();
+    defer shape.release();
+
+    const CollectContext = struct {
+        grass: *const Material,
+        stone: *const Material,
+        triangle_count: u32 = 0,
+        grass_count: u32 = 0,
+        stone_count: u32 = 0,
+
+        fn collect(
+            context: ?*anyopaque,
+            triangles: [*]const Shape.Triangle,
+            triangle_count: u32,
+        ) callconv(.c) bool {
+            const self: *@This() = @ptrCast(@alignCast(context.?));
+            const triangle_slice = triangles[0..@intCast(triangle_count)];
+            self.triangle_count += triangle_count;
+            for (triangle_slice) |triangle| {
+                if (triangle.material == self.grass) {
+                    self.grass_count += 1;
+                } else if (triangle.material == self.stone) {
+                    self.stone_count += 1;
+                }
+            }
+            return true;
+        }
+    };
+
+    var context = CollectContext{ .grass = grass, .stone = stone };
+    try expect(shape.collectTriangles(
+        .{ .box = shape.getLocalBounds() },
+        @ptrCast(&context),
+        CollectContext.collect,
+    ));
+    try expect(context.triangle_count > 0);
+    try expect(context.grass_count > 0);
+    try expect(context.stone_count > 0);
 }
 
 test "zphysics.shape.meshshape" {

@@ -26,6 +26,7 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/ScaledShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
+#include <Jolt/Physics/Collision/Shape/SubShapeID.h>
 #include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/Shape/MutableCompoundShape.h>
 #include <Jolt/Physics/Collision/PhysicsMaterial.h>
@@ -516,6 +517,76 @@ static inline void storeMat44(float out[16], JPH::Mat44Arg in) {
     assert(out != nullptr);
     in.StoreFloat4x4(reinterpret_cast<JPH::Float4 *>(out));
 }
+
+class ShapeTriangleCollector final : public JPH::TransformedShapeCollector
+{
+public:
+    ShapeTriangleCollector(const JPH::AABox &in_box,
+                           JPH::RVec3Arg in_base_offset,
+                           void *in_user_data,
+                           JPC_Shape_CollectTrianglesFunc in_callback) :
+        mBox(in_box),
+        mBaseOffset(in_base_offset),
+        mUserData(in_user_data),
+        mCallback(in_callback)
+    {
+    }
+
+    void AddHit(const JPH::TransformedShape &in_result) override
+    {
+        if (!mContinue)
+            return;
+
+        JPH::Shape::GetTrianglesContext context;
+        in_result.GetTrianglesStart(context, mBox, mBaseOffset);
+
+        constexpr int max_triangles = JPH::Shape::cGetTrianglesMinTrianglesRequested;
+        JPH::Float3 triangle_vertices[max_triangles * 3];
+        const JPH::PhysicsMaterial *materials[max_triangles];
+        JPC_Shape_Triangle triangles[max_triangles];
+
+        for (;;)
+        {
+            int num_triangles = in_result.GetTrianglesNext(context, max_triangles, triangle_vertices, materials);
+            if (num_triangles == 0)
+                return;
+
+            for (int triangle_index = 0; triangle_index < num_triangles; ++triangle_index)
+            {
+                JPC_Shape_Triangle &triangle = triangles[triangle_index];
+                for (int vertex_index = 0; vertex_index < 3; ++vertex_index)
+                {
+                    const JPH::Float3 &vertex = triangle_vertices[triangle_index * 3 + vertex_index];
+                    triangle.vertices[vertex_index][0] = vertex.x;
+                    triangle.vertices[vertex_index][1] = vertex.y;
+                    triangle.vertices[vertex_index][2] = vertex.z;
+                }
+
+                const JPH::PhysicsMaterial *material = materials[triangle_index];
+                triangle.material = material != nullptr ? toJpc(material) : nullptr;
+            }
+
+            if (!mCallback(mUserData, triangles, static_cast<uint32_t>(num_triangles)))
+            {
+                mContinue = false;
+                ForceEarlyOut();
+                return;
+            }
+        }
+    }
+
+    bool Completed() const
+    {
+        return mContinue;
+    }
+
+private:
+    const JPH::AABox &mBox;
+    JPH::RVec3 mBaseOffset;
+    void *mUserData;
+    JPC_Shape_CollectTrianglesFunc mCallback;
+    bool mContinue = true;
+};
 
 static JPH::TraceFunction default_trace = nullptr;
 
@@ -2340,6 +2411,32 @@ JPC_Shape_GetSupportingFace(const JPC_Shape *in_shape,
                                        loadMat44(in_transform),
                                        face);
     return *reinterpret_cast<JPC_Shape_SupportingFace*>(&face);
+}
+//--------------------------------------------------------------------------------------------------
+JPC_API bool
+JPC_Shape_CollectTriangles(const JPC_Shape *in_shape,
+                           const JPC_AABox *in_box,
+                           const float in_position_com[3],
+                           const float in_rotation[4],
+                           const float in_scale[3],
+                           const JPC_Real in_base_offset[3],
+                           void *in_user_data,
+                           JPC_Shape_CollectTrianglesFunc in_callback)
+{
+    assert(in_callback != nullptr);
+
+    ShapeTriangleCollector collector(*toJph(in_box),
+                                     loadRVec3(in_base_offset),
+                                     in_user_data,
+                                     in_callback);
+    toJph(in_shape)->CollectTransformedShapes(*toJph(in_box),
+                                              loadVec3(in_position_com),
+                                              JPH::Quat(loadVec4(in_rotation)),
+                                              loadVec3(in_scale),
+                                              JPH::SubShapeIDCreator(),
+                                              collector,
+                                              JPH::ShapeFilter());
+    return collector.Completed();
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API bool

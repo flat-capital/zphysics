@@ -694,6 +694,18 @@ typedef struct JPC_Shape_SupportingFace
     alignas(16) float    points[32][4]; // 4th element is ignored; world space
 } JPC_Shape_SupportingFace;
 
+typedef struct JPC_Shape_Triangle
+{
+    float                      vertices[3][3];
+    const JPC_PhysicsMaterial *material;
+} JPC_Shape_Triangle;
+
+// Return false to stop triangle collection early. Triangle/material pointers are only valid
+// for the duration of the callback.
+typedef bool (*JPC_Shape_CollectTrianglesFunc)(void *in_user_data,
+                                               const JPC_Shape_Triangle *in_triangles,
+                                               uint32_t in_num_triangles);
+
 // NOTE: Needs to be kept in sync with JPH::CharacterVirtual::ExtendedUpdateSettings
 typedef struct JPC_CharacterVirtual_ExtendedUpdateSettings
 {
@@ -1864,6 +1876,16 @@ JPC_Shape_GetSupportingFace(const JPC_Shape *in_shape,
                             const float in_direction[3],
                             const float in_scale[3],
                             const float in_transform[16]);
+
+JPC_API bool
+JPC_Shape_CollectTriangles(const JPC_Shape *in_shape,
+                           const JPC_AABox *in_box,
+                           const float in_position_com[3],
+                           const float in_rotation[4],
+                           const float in_scale[3],
+                           const JPC_Real in_base_offset[3],
+                           void *in_user_data,
+                           JPC_Shape_CollectTrianglesFunc in_callback);
 
 JPC_API bool
 JPC_Shape_CastRay(const JPC_Shape *in_shape,
