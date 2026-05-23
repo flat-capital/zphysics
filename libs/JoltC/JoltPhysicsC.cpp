@@ -305,6 +305,7 @@ FN(toJph)(const JPC_SubShapeID *in) { assert(in); return reinterpret_cast<const 
 FN(toJpc)(JPH::SubShapeID in) { return (JPC_SubShapeID){ in.GetValue() }; }
 FN(toJph)(const JPC_BodyID *in) { assert(in); return reinterpret_cast<const JPH::BodyID *>(in); }
 FN(toJph)(JPC_BodyID *in) { assert(in); return reinterpret_cast<JPH::BodyID *>(in); }
+FN(toJpc)(JPH::CharacterID in) { return (JPC_CharacterID){ in.GetValue() }; }
 
 FN(toJpc)(const JPH::SubShapeIDCreator *in) { assert(in); return reinterpret_cast<const JPC_SubShapeIDCreator *>(in); }
 FN(toJph)(const JPC_SubShapeIDCreator *in) { assert(in); return reinterpret_cast<const JPH::SubShapeIDCreator *>(in); }
@@ -427,6 +428,7 @@ FN(toJph)(const JPC_CharacterVirtualSettings *in) { assert(in); return reinterpr
 FN(toJph)(JPC_CharacterVirtualSettings *in) { assert(in); return reinterpret_cast<JPH::CharacterVirtualSettings *>(in); }
 FN(toJpc)(const JPH::CharacterVirtualSettings *in) { assert(in); return reinterpret_cast<const JPC_CharacterVirtualSettings *>(in); }
 FN(toJpc)(JPH::CharacterVirtualSettings *in) { assert(in); return reinterpret_cast<JPC_CharacterVirtualSettings *>(in); }
+FN(toJpc)(JPH::CharacterContactSettings *in) { assert(in); return reinterpret_cast<JPC_CharacterContactSettings *>(in); }
 
 FN(toJpc)(const JPH::AABox *in) { assert(in); return reinterpret_cast<const JPC_AABox *>(in); }
 FN(toJph)(const JPC_AABox *in) { assert(in); return reinterpret_cast<const JPH::AABox *>(in); }
@@ -723,6 +725,275 @@ public:
         JPC_ContactListenerVTable *vtbl;
     };
     CListener *c_listener;
+};
+
+class CharacterContactListener : public JPH::CharacterContactListener
+{
+public:
+    void OnAdjustBodyVelocity(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::Body &inBody2,
+        JPH::Vec3 &ioLinearVelocity,
+        JPH::Vec3 &ioAngularVelocity) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnAdjustBodyVelocity)
+        {
+            float linear_velocity[3];
+            float angular_velocity[3];
+            storeVec3(linear_velocity, ioLinearVelocity);
+            storeVec3(angular_velocity, ioAngularVelocity);
+
+            c_listener->vtbl->OnAdjustBodyVelocity(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inBody2.GetID()),
+                linear_velocity,
+                angular_velocity);
+
+            ioLinearVelocity = loadVec3(linear_velocity);
+            ioAngularVelocity = loadVec3(angular_velocity);
+        }
+    }
+
+    bool OnContactValidate(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::BodyID &inBodyID2,
+        const JPH::SubShapeID &inSubShapeID2) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnContactValidate)
+        {
+            return c_listener->vtbl->OnContactValidate(
+                c_listener, toJpc(inCharacter), toJpc(inBodyID2), toJpc(inSubShapeID2));
+        }
+        return JPH::CharacterContactListener::OnContactValidate(inCharacter, inBodyID2, inSubShapeID2);
+    }
+
+    bool OnCharacterContactValidate(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::CharacterVirtual *inOtherCharacter,
+        const JPH::SubShapeID &inSubShapeID2) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnCharacterContactValidate)
+        {
+            return c_listener->vtbl->OnCharacterContactValidate(
+                c_listener, toJpc(inCharacter), toJpc(inOtherCharacter), toJpc(inSubShapeID2));
+        }
+        return JPH::CharacterContactListener::OnCharacterContactValidate(inCharacter, inOtherCharacter, inSubShapeID2);
+    }
+
+    void OnContactAdded(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::BodyID &inBodyID2,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::CharacterContactSettings &ioSettings) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnContactAdded)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+
+            c_listener->vtbl->OnContactAdded(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inBodyID2),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                toJpc(&ioSettings));
+        }
+    }
+
+    void OnContactPersisted(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::BodyID &inBodyID2,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::CharacterContactSettings &ioSettings) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnContactPersisted)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+
+            c_listener->vtbl->OnContactPersisted(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inBodyID2),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                toJpc(&ioSettings));
+        }
+    }
+
+    void OnContactRemoved(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::BodyID &inBodyID2,
+        const JPH::SubShapeID &inSubShapeID2) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnContactRemoved)
+        {
+            c_listener->vtbl->OnContactRemoved(
+                c_listener, toJpc(inCharacter), toJpc(inBodyID2), toJpc(inSubShapeID2));
+        }
+    }
+
+    void OnCharacterContactAdded(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::CharacterVirtual *inOtherCharacter,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::CharacterContactSettings &ioSettings) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnCharacterContactAdded)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+
+            c_listener->vtbl->OnCharacterContactAdded(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inOtherCharacter),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                toJpc(&ioSettings));
+        }
+    }
+
+    void OnCharacterContactPersisted(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::CharacterVirtual *inOtherCharacter,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::CharacterContactSettings &ioSettings) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnCharacterContactPersisted)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+
+            c_listener->vtbl->OnCharacterContactPersisted(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inOtherCharacter),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                toJpc(&ioSettings));
+        }
+    }
+
+    void OnCharacterContactRemoved(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::CharacterID &inOtherCharacterID,
+        const JPH::SubShapeID &inSubShapeID2) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnCharacterContactRemoved)
+        {
+            c_listener->vtbl->OnCharacterContactRemoved(
+                c_listener, toJpc(inCharacter), toJpc(inOtherCharacterID), toJpc(inSubShapeID2));
+        }
+    }
+
+    void OnContactSolve(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::BodyID &inBodyID2,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::Vec3Arg inContactVelocity,
+        const JPH::PhysicsMaterial *inContactMaterial,
+        JPH::Vec3Arg inCharacterVelocity,
+        JPH::Vec3 &ioNewCharacterVelocity) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnContactSolve)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            float contact_velocity[3];
+            float character_velocity[3];
+            float new_character_velocity[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+            storeVec3(contact_velocity, inContactVelocity);
+            storeVec3(character_velocity, inCharacterVelocity);
+            storeVec3(new_character_velocity, ioNewCharacterVelocity);
+
+            c_listener->vtbl->OnContactSolve(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inBodyID2),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                contact_velocity,
+                toJpc(inContactMaterial),
+                character_velocity,
+                new_character_velocity);
+
+            ioNewCharacterVelocity = loadVec3(new_character_velocity);
+        }
+    }
+
+    void OnCharacterContactSolve(
+        const JPH::CharacterVirtual *inCharacter,
+        const JPH::CharacterVirtual *inOtherCharacter,
+        const JPH::SubShapeID &inSubShapeID2,
+        JPH::RVec3Arg inContactPosition,
+        JPH::Vec3Arg inContactNormal,
+        JPH::Vec3Arg inContactVelocity,
+        const JPH::PhysicsMaterial *inContactMaterial,
+        JPH::Vec3Arg inCharacterVelocity,
+        JPH::Vec3 &ioNewCharacterVelocity) override
+    {
+        if (c_listener != nullptr && c_listener->vtbl->OnCharacterContactSolve)
+        {
+            JPC_Real contact_position[3];
+            float contact_normal[3];
+            float contact_velocity[3];
+            float character_velocity[3];
+            float new_character_velocity[3];
+            storeRVec3(contact_position, inContactPosition);
+            storeVec3(contact_normal, inContactNormal);
+            storeVec3(contact_velocity, inContactVelocity);
+            storeVec3(character_velocity, inCharacterVelocity);
+            storeVec3(new_character_velocity, ioNewCharacterVelocity);
+
+            c_listener->vtbl->OnCharacterContactSolve(
+                c_listener,
+                toJpc(inCharacter),
+                toJpc(inOtherCharacter),
+                toJpc(inSubShapeID2),
+                contact_position,
+                contact_normal,
+                contact_velocity,
+                toJpc(inContactMaterial),
+                character_velocity,
+                new_character_velocity);
+
+            ioNewCharacterVelocity = loadVec3(new_character_velocity);
+        }
+    }
+
+    struct CListener
+    {
+        const JPC_CharacterContactListenerVTable *vtbl;
+    };
+    CListener *c_listener = nullptr;
 };
 
 #if JPC_DEBUG_RENDERER == 1
@@ -3488,21 +3759,53 @@ JPC_CharacterVirtualSettings_Release(JPC_CharacterVirtualSettings *in_settings)
 // JPC_CharacterVirtual
 //
 //--------------------------------------------------------------------------------------------------
+struct CharacterVirtualData
+{
+    uint64_t safety_token = 0xC4A2ACC0DEFA57A7;
+    CharacterContactListener *contact_listener = nullptr;
+};
+
+static constexpr size_t CharacterVirtualDataOffset =
+    (sizeof(JPH::CharacterVirtual) + alignof(CharacterVirtualData) - 1) & ~(alignof(CharacterVirtualData) - 1);
+
+static CharacterVirtualData *
+getCharacterVirtualData(JPC_CharacterVirtual *in_character)
+{
+    auto data = reinterpret_cast<CharacterVirtualData *>(
+        reinterpret_cast<uint8_t *>(in_character) + CharacterVirtualDataOffset);
+    assert(data->safety_token == 0xC4A2ACC0DEFA57A7);
+    return data;
+}
+
 JPC_API JPC_CharacterVirtual *
 JPC_CharacterVirtual_Create(const JPC_CharacterVirtualSettings *in_settings,
                             const JPC_Real in_position[3],
                             const float in_rotation[4],
                             JPC_PhysicsSystem *in_physics_system)
 {
-    auto character = new JPH::CharacterVirtual(
+    auto storage = static_cast<uint8_t *>(
+        JPH::Allocate(CharacterVirtualDataOffset + sizeof(CharacterVirtualData)));
+    auto character = reinterpret_cast<JPH::CharacterVirtual *>(storage);
+    ::new (character) JPH::CharacterVirtual(
         toJph(in_settings), loadRVec3(in_position), JPH::Quat(loadVec4(in_rotation)), toJph(in_physics_system));
+    ::new (storage + CharacterVirtualDataOffset) CharacterVirtualData();
     return toJpc(character);
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API void
 JPC_CharacterVirtual_Destroy(JPC_CharacterVirtual *in_character)
 {
-    delete toJph(in_character);
+    auto data = getCharacterVirtualData(in_character);
+    if (data->contact_listener)
+    {
+        toJph(in_character)->SetListener(nullptr);
+        data->contact_listener->~CharacterContactListener();
+        JPH::Free(data->contact_listener);
+    }
+
+    data->~CharacterVirtualData();
+    toJph(in_character)->~CharacterVirtual();
+    JPH::Free(in_character);
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API void
@@ -3598,12 +3901,24 @@ JPC_CharacterVirtual_GetGroundUserData(const JPC_CharacterVirtual *in_character)
 JPC_API void
 JPC_CharacterVirtual_SetListener(JPC_CharacterVirtual *in_character, void *in_listener)
 {
+    auto data = getCharacterVirtualData(in_character);
     if (in_listener == nullptr)
     {
         toJph(in_character)->SetListener(nullptr);
+        if (data->contact_listener)
+            data->contact_listener->c_listener = nullptr;
         return;
     }
-    toJph(in_character)->SetListener(static_cast<JPH::CharacterContactListener *>(in_listener));
+
+    if (data->contact_listener == nullptr)
+    {
+        data->contact_listener = static_cast<CharacterContactListener *>(
+            JPH::Allocate(sizeof(CharacterContactListener)));
+        ::new (data->contact_listener) CharacterContactListener();
+    }
+
+    data->contact_listener->c_listener = static_cast<CharacterContactListener::CListener *>(in_listener);
+    toJph(in_character)->SetListener(data->contact_listener);
 }
 //--------------------------------------------------------------------------------------------------
 JPC_API void

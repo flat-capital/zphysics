@@ -88,9 +88,24 @@ pub const SubShapeId = enum(SubShapeIdInt) {
     }
 };
 
+const CharacterIdInt = std.meta.fieldInfo(c.JPC_CharacterID, .id).type;
+pub const CharacterId = enum(CharacterIdInt) {
+    invalid = 0xffff_ffff,
+    _,
+
+    pub inline fn isInvalid(self: CharacterId) bool {
+        return self == .invalid;
+    }
+
+    pub inline fn toJpc(self: CharacterId) c.JPC_CharacterID {
+        return .{ .id = @intFromEnum(self) };
+    }
+};
+
 comptime {
     assert(@typeInfo(BodyId).@"enum".tag_type == BodyIdInt);
     assert(@typeInfo(SubShapeId).@"enum".tag_type == SubShapeIdInt);
+    assert(@typeInfo(CharacterId).@"enum".tag_type == CharacterIdInt);
     assert(std.meta.fieldInfo(@typeInfo(@TypeOf(c.JPC_CharacterVirtual_GetGroundBodyID)).@"fn".return_type.?, .id).type == BodyIdInt);
     assert(std.meta.fieldInfo(@typeInfo(@TypeOf(c.JPC_CharacterVirtual_GetGroundSubShapeID)).@"fn".return_type.?, .id).type == SubShapeIdInt);
 }
@@ -476,31 +491,30 @@ pub const CharacterContactListener = extern struct {
     }
 
     pub const VTable = extern struct {
-        __header: VTableHeader = .{},
         onAdjustBodyVelocity: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
+            body_id: BodyId,
             io_linear_velocity: *[3]f32,
             io_angular_velocity: *[3]f32,
         ) callconv(.c) void,
         onContactValidate: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
-            sub_shape_id: *const SubShapeId,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
         ) callconv(.c) bool,
         onCharacterContactValidate: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
             other_character: *const CharacterVirtual,
-            sub_shape_id: *const SubShapeId,
+            sub_shape_id: SubShapeId,
         ) callconv(.c) bool,
         onContactAdded: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
-            sub_shape_id: *const SubShapeId,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             io_settings: *CharacterContactSettings,
@@ -508,8 +522,8 @@ pub const CharacterContactListener = extern struct {
         onContactPersisted: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
-            sub_shape_id: *const SubShapeId,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             io_settings: *CharacterContactSettings,
@@ -517,14 +531,14 @@ pub const CharacterContactListener = extern struct {
         onContactRemoved: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
-            sub_shape_id: *const SubShapeId,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
         ) callconv(.c) void,
         onCharacterContactAdded: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
             other_character: *const CharacterVirtual,
-            sub_shape_id: *const SubShapeId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             io_settings: *CharacterContactSettings,
@@ -533,7 +547,7 @@ pub const CharacterContactListener = extern struct {
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
             other_character: *const CharacterVirtual,
-            sub_shape_id: *const SubShapeId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             io_settings: *CharacterContactSettings,
@@ -541,18 +555,18 @@ pub const CharacterContactListener = extern struct {
         onCharacterContactRemoved: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            other_character: *const CharacterVirtual,
-            sub_shape_id: *const SubShapeId,
+            other_character_id: CharacterId,
+            sub_shape_id: SubShapeId,
         ) callconv(.c) void,
         onContactSolve: *const fn (
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
-            body: *const Body,
-            sub_shape_id: *const SubShapeId,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             contact_velocity: *const [3]f32,
-            contact_material: *const Material,
+            contact_material: ?*const Material,
             character_velocity: *const [3]f32,
             character_velocity_out: *[3]f32,
         ) callconv(.c) void,
@@ -560,11 +574,11 @@ pub const CharacterContactListener = extern struct {
             self: *CharacterContactListener,
             character: *const CharacterVirtual,
             other_character: *const CharacterVirtual,
-            sub_shape_id: *const SubShapeId,
+            sub_shape_id: SubShapeId,
             contact_position: *const [3]Real,
             contact_normal: *const [3]f32,
             contact_velocity: *const [3]f32,
-            contact_material: *const Material,
+            contact_material: ?*const Material,
             character_velocity: *const [3]f32,
             character_velocity_out: *[3]f32,
         ) callconv(.c) void,
@@ -572,7 +586,6 @@ pub const CharacterContactListener = extern struct {
 
     comptime {
         assert(@sizeOf(VTable) == @sizeOf(c.JPC_CharacterContactListenerVTable));
-        assert(@offsetOf(VTable, "onAdjustBodyVelocity") == @offsetOf(c.JPC_CharacterContactListenerVTable, "OnAdjustBodyVelocity"));
         assert(@offsetOf(VTable, "onContactSolve") == @offsetOf(c.JPC_CharacterContactListenerVTable, "OnContactSolve"));
     }
 };
@@ -2578,8 +2591,11 @@ pub const CharacterVirtual = opaque {
         );
     }
 
-    pub fn setListener(character: *CharacterVirtual, listener: ?*anyopaque) void {
-        c.JPC_CharacterVirtual_SetListener(@as(*c.JPC_CharacterVirtual, @ptrCast(character)), listener);
+    pub fn setListener(character: *CharacterVirtual, listener: ?*CharacterContactListener) void {
+        c.JPC_CharacterVirtual_SetListener(
+            @as(*c.JPC_CharacterVirtual, @ptrCast(character)),
+            @as(?*anyopaque, @ptrCast(listener)),
+        );
     }
     pub fn updateGroundVelocity(character: *CharacterVirtual) void {
         c.JPC_CharacterVirtual_UpdateGroundVelocity(@as(*c.JPC_CharacterVirtual, @ptrCast(character)));
@@ -4773,6 +4789,226 @@ test "zphysics.character_virtual.ground_accessors" {
 
     try expect(character.getGroundState() == .in_air);
     try expect(character.getGroundBodyId().isInvalid());
+}
+
+test "zphysics.character_virtual.contact_listener_body_callbacks" {
+    try init(std.testing.allocator, .{});
+    defer deinit();
+
+    const CharacterContactRecorder = extern struct {
+        listener: CharacterContactListener = .init(@This()),
+        floor_id: BodyId = .invalid,
+        validate_count: usize = 0,
+        added_count: usize = 0,
+        solved_count: usize = 0,
+        removed_count: usize = 0,
+        body_id: BodyId = .invalid,
+        sub_shape_id: SubShapeId = .empty,
+        solve_material: ?*const Material = null,
+        normal: [3]f32 = .{ 0.0, 0.0, 0.0 },
+
+        pub fn onAdjustBodyVelocity(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: BodyId,
+            _: *[3]f32,
+            _: *[3]f32,
+        ) callconv(.c) void {}
+
+        pub fn onContactValidate(
+            listener: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            body_id: BodyId,
+            _: SubShapeId,
+        ) callconv(.c) bool {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.validate_count += 1;
+            return body_id == self.floor_id;
+        }
+
+        pub fn onCharacterContactValidate(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: *const CharacterVirtual,
+            _: SubShapeId,
+        ) callconv(.c) bool {
+            return false;
+        }
+
+        pub fn onContactAdded(
+            listener: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
+            _: *const [3]Real,
+            contact_normal: *const [3]f32,
+            _: *CharacterContactSettings,
+        ) callconv(.c) void {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.added_count += 1;
+            self.body_id = body_id;
+            self.sub_shape_id = sub_shape_id;
+            self.normal = contact_normal.*;
+        }
+
+        pub fn onContactPersisted(
+            listener: *CharacterContactListener,
+            character: *const CharacterVirtual,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
+            contact_position: *const [3]Real,
+            contact_normal: *const [3]f32,
+            settings: *CharacterContactSettings,
+        ) callconv(.c) void {
+            onContactAdded(listener, character, body_id, sub_shape_id, contact_position, contact_normal, settings);
+        }
+
+        pub fn onContactRemoved(
+            listener: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
+        ) callconv(.c) void {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.removed_count += 1;
+            self.body_id = body_id;
+            self.sub_shape_id = sub_shape_id;
+        }
+
+        pub fn onCharacterContactAdded(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: *const CharacterVirtual,
+            _: SubShapeId,
+            _: *const [3]Real,
+            _: *const [3]f32,
+            _: *CharacterContactSettings,
+        ) callconv(.c) void {}
+
+        pub fn onCharacterContactPersisted(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: *const CharacterVirtual,
+            _: SubShapeId,
+            _: *const [3]Real,
+            _: *const [3]f32,
+            _: *CharacterContactSettings,
+        ) callconv(.c) void {}
+
+        pub fn onCharacterContactRemoved(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: CharacterId,
+            _: SubShapeId,
+        ) callconv(.c) void {}
+
+        pub fn onContactSolve(
+            listener: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            body_id: BodyId,
+            sub_shape_id: SubShapeId,
+            _: *const [3]Real,
+            contact_normal: *const [3]f32,
+            _: *const [3]f32,
+            contact_material: ?*const Material,
+            _: *const [3]f32,
+            _: *[3]f32,
+        ) callconv(.c) void {
+            const self: *@This() = @alignCast(@fieldParentPtr("listener", listener));
+            self.solved_count += 1;
+            self.body_id = body_id;
+            self.sub_shape_id = sub_shape_id;
+            self.solve_material = contact_material;
+            self.normal = contact_normal.*;
+        }
+
+        pub fn onCharacterContactSolve(
+            _: *CharacterContactListener,
+            _: *const CharacterVirtual,
+            _: *const CharacterVirtual,
+            _: SubShapeId,
+            _: *const [3]Real,
+            _: *const [3]f32,
+            _: *const [3]f32,
+            _: ?*const Material,
+            _: *const [3]f32,
+            _: *[3]f32,
+        ) callconv(.c) void {}
+    };
+
+    const my_broad_phase_layer_interface = test_cb1.MyBroadphaseLayerInterface.init();
+    const my_broad_phase_should_collide = test_cb1.MyObjectVsBroadPhaseLayerFilter{};
+    const my_object_should_collide = test_cb1.MyObjectLayerPairFilter{};
+
+    const physics_system = try PhysicsSystem.create(
+        @as(*const BroadPhaseLayerInterface, @ptrCast(&my_broad_phase_layer_interface)),
+        @as(*const ObjectVsBroadPhaseLayerFilter, @ptrCast(&my_broad_phase_should_collide)),
+        @as(*const ObjectLayerPairFilter, @ptrCast(&my_object_should_collide)),
+        .{},
+    );
+    defer physics_system.destroy();
+
+    const body_interface = physics_system.getBodyInterfaceMut();
+
+    const floor_material = try Material.createSimple("floor_material", .{ 80, 200, 120, 255 });
+    defer floor_material.release();
+
+    const floor_shape_settings = try BoxShapeSettings.create(.{ 10.0, 0.5, 10.0 });
+    defer floor_shape_settings.asShapeSettings().release();
+    floor_shape_settings.asConvexShapeSettings().setMaterial(floor_material);
+
+    const floor_shape = try floor_shape_settings.asShapeSettings().createShape();
+    defer floor_shape.release();
+
+    const floor_settings = BodyCreationSettings{
+        .position = .{ 0.0, -0.5, 0.0, 1.0 },
+        .rotation = .{ 0.0, 0.0, 0.0, 1.0 },
+        .shape = floor_shape,
+        .motion_type = .static,
+        .object_layer = test_cb1.object_layers.non_moving,
+    };
+    const floor_id = try body_interface.createAndAddBody(floor_settings, .activate);
+    defer body_interface.removeAndDestroyBody(floor_id);
+
+    const capsule_shape_settings = try CapsuleShapeSettings.create(0.5, 0.5);
+    defer capsule_shape_settings.asShapeSettings().release();
+
+    const capsule_shape = try capsule_shape_settings.asShapeSettings().createShape();
+    defer capsule_shape.release();
+
+    const character_settings = try CharacterVirtualSettings.create();
+    defer character_settings.release();
+    character_settings.base.shape = capsule_shape;
+
+    const character = try CharacterVirtual.create(
+        character_settings,
+        .{ 0.0, 4.0, 0.0 },
+        .{ 0.0, 0.0, 0.0, 1.0 },
+        physics_system,
+    );
+    defer character.destroy();
+
+    var recorder = CharacterContactRecorder{ .floor_id = floor_id };
+    character.setListener(&recorder.listener);
+    defer character.setListener(null);
+
+    physics_system.optimizeBroadPhase();
+
+    const update_settings = CharacterVirtual.ExtendedUpdateSettings{};
+    for (0..120) |_| {
+        character.setLinearVelocity(.{ 0.0, -6.0, 0.0 });
+        character.extendedUpdate(1.0 / 60.0, .{ 0.0, -9.8, 0.0 }, &update_settings, .{});
+        if (recorder.solved_count > 0) break;
+    }
+
+    try expect(recorder.validate_count > 0);
+    try expect(recorder.added_count > 0);
+    try expect(recorder.solved_count > 0);
+    try expect(recorder.body_id == floor_id);
+    try expect(recorder.sub_shape_id.isEmpty());
+    try expect(recorder.solve_material == floor_material);
+    try expect(recorder.normal[1] > 0.9);
+    try expect(recorder.removed_count == 0);
 }
 
 test "zphysics.body.contact_material_accessors" {

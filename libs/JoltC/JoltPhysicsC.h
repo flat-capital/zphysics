@@ -302,6 +302,11 @@ typedef struct JPC_SubShapeID
     uint32_t id;
 } JPC_SubShapeID;
 
+typedef struct JPC_CharacterID
+{
+    uint32_t id;
+} JPC_CharacterID;
+
 #define JPC_ID_EQ(a, b) (a.id == b.id)
 
 // TODO: Consider using structures for IDs
@@ -923,36 +928,34 @@ typedef struct JPC_PhysicsStepListenerVTable
 // Made all callbacks required for this one for simplicity's sake, but can be modified to imitate ContactListener later.
 typedef struct JPC_CharacterContactListenerVTable
 {
-    _JPC_VTABLE_HEADER;
-
     // Required, *cannot* be NULL.
     void
     (*OnAdjustBodyVelocity)(void *in_self,
                             const JPC_CharacterVirtual *in_character,
-                            const JPC_Body *in_body2,
-                            const float io_linear_velocity[3],
-                            const float io_angular_velocity[3]);
+                            JPC_BodyID body_id,
+                            float io_linear_velocity[3],
+                            float io_angular_velocity[3]);
 
     // Required, *cannot* be NULL.
     bool
     (*OnContactValidate)(void *in_self,
                          const JPC_CharacterVirtual *in_character,
-                         const JPC_Body *in_body2,
-                         const JPC_SubShapeID *sub_shape_id);
+                         JPC_BodyID body_id,
+                         JPC_SubShapeID sub_shape_id);
 
     // Required, *cannot* be NULL.
     bool
     (*OnCharacterContactValidate)(void *in_self,
                                   const JPC_CharacterVirtual *in_character,
                                   const JPC_CharacterVirtual *in_other_character,
-                                  const JPC_SubShapeID *sub_shape_id);
+                                  JPC_SubShapeID sub_shape_id);
 
     // Required, *cannot* be NULL.
     void
     (*OnContactAdded)(void *in_self,
                       const JPC_CharacterVirtual *in_character,
-                      const JPC_Body *in_body2,
-                      const JPC_SubShapeID *sub_shape_id,
+                      JPC_BodyID body_id,
+                      JPC_SubShapeID sub_shape_id,
                       const JPC_Real contact_position[3],
                       const float contact_normal[3],
                       JPC_CharacterContactSettings *io_settings);
@@ -961,8 +964,8 @@ typedef struct JPC_CharacterContactListenerVTable
     void
     (*OnContactPersisted)(void *in_self,
                           const JPC_CharacterVirtual *in_character,
-                          const JPC_Body *in_body2,
-                          const JPC_SubShapeID *sub_shape_id,
+                          JPC_BodyID body_id,
+                          JPC_SubShapeID sub_shape_id,
                           const JPC_Real contact_position[3],
                           const float contact_normal[3],
                           JPC_CharacterContactSettings *io_settings);
@@ -971,15 +974,15 @@ typedef struct JPC_CharacterContactListenerVTable
     void
     (*OnContactRemoved)(void *in_self,
                         const JPC_CharacterVirtual *in_character,
-                        const JPC_Body *in_body2,
-                        const JPC_SubShapeID *sub_shape_id);
+                        JPC_BodyID body_id,
+                        JPC_SubShapeID sub_shape_id);
 
     // Required, *cannot* be NULL.
     void
     (*OnCharacterContactAdded)(void *in_self,
                                const JPC_CharacterVirtual *in_character,
                                const JPC_CharacterVirtual *in_other_character,
-                               const JPC_SubShapeID *sub_shape_id,
+                               JPC_SubShapeID sub_shape_id,
                                const JPC_Real contact_position[3],
                                const float contact_normal[3],
                                JPC_CharacterContactSettings *io_settings);
@@ -989,7 +992,7 @@ typedef struct JPC_CharacterContactListenerVTable
     (*OnCharacterContactPersisted)(void *in_self,
                                    const JPC_CharacterVirtual *in_character,
                                    const JPC_CharacterVirtual *in_other_character,
-                                   const JPC_SubShapeID *sub_shape_id,
+                                   JPC_SubShapeID sub_shape_id,
                                    const JPC_Real contact_position[3],
                                    const float contact_normal[3],
                                    JPC_CharacterContactSettings *io_settings);
@@ -998,15 +1001,15 @@ typedef struct JPC_CharacterContactListenerVTable
     void
     (*OnCharacterContactRemoved)(void *in_self,
                                  const JPC_CharacterVirtual *in_character,
-                                 const JPC_CharacterVirtual *in_other_character,
-                                 const JPC_SubShapeID *sub_shape_id);
+                                 JPC_CharacterID in_other_character_id,
+                                 JPC_SubShapeID sub_shape_id);
 
     // Required, *cannot* be NULL.
     void
     (*OnContactSolve)(void *in_self,
                       const JPC_CharacterVirtual *in_character,
-                      const JPC_Body *in_body2,
-                      const JPC_SubShapeID *sub_shape_id,
+                      JPC_BodyID body_id,
+                      JPC_SubShapeID sub_shape_id,
                       const JPC_Real contact_position[3],
                       const float contact_normal[3],
                       const float contact_velocity[3],
@@ -1019,7 +1022,7 @@ typedef struct JPC_CharacterContactListenerVTable
     (*OnCharacterContactSolve)(void *in_self,
                                const JPC_CharacterVirtual *in_character,
                                const JPC_CharacterVirtual *in_other_character,
-                               const JPC_SubShapeID *sub_shape_id,
+                               JPC_SubShapeID sub_shape_id,
                                const JPC_Real contact_position[3],
                                const float contact_normal[3],
                                const float contact_velocity[3],
